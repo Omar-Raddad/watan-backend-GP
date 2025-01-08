@@ -1,40 +1,109 @@
-// userController.js
+const User = require('../models/userModel');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
-// Dummy data to simulate a user database (replace this with real DB logic)
-const users = [
-    { username: 'testuser', password: 'password123' },
-    // Add more test users as needed
-  ];
-  
-  // User login controller
-  const loginUser = (req, res) => {
-    const { username, password } = req.body;
-  
-    // Find user in dummy database (replace with MongoDB logic)
-    const user = users.find((u) => u.username === username && u.password === password);
-  
-    if (user) {
-      res.status(200).json({ message: 'Login successful', user });
-    } else {
-      res.status(401).json({ message: 'Invalid username or password' });
+// User login
+const loginUser = async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    console.log("user",user);
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid email or password' });
     }
-  };
-  
-  // User registration controller
-  const registerUser = (req, res) => {
-    const { username, password } = req.body;
-  
-    // Check if user already exists in dummy database (replace with MongoDB logic)
-    const userExists = users.find((u) => u.username === username);
-  
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+
+    // Generate JWT
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    res.status(200).json({
+      message: 'Login successful',
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        city: user.city,
+        location: user.location,
+        gender: user.gender,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// User registration
+const registerUser = async (req, res) => {
+  const { username, email, password, city, location, gender } = req.body;
+
+  try {
+    const userExists = await User.findOne({ email });
     if (userExists) {
-      return res.status(400).json({ message: 'User already exists' });
+      return res.status(400).json({ message: 'User with this email already exists' });
     }
-  
-    // Add user to dummy database (replace with real DB insertion)
-    users.push({ username, password });
-    res.status(201).json({ message: 'User registered successfully', user: { username } });
-  };
-  
-  module.exports = { loginUser, registerUser };
-  
+
+    const newUser = new User({ username, email, password, city, location, gender });
+    await newUser.save();
+
+    res.status(201).json({
+      message: 'User registered successfully',
+      user: {
+        id: newUser._id,
+        username: newUser.username,
+        email: newUser.email,
+        city: newUser.city,
+        location: newUser.location,
+        gender: newUser.gender,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Fetch user profile
+const getUserProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json(user);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Update user profile
+const updateUserProfile = async (req, res) => {
+  const { username, email, city, location } = req.body;
+
+  try {
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Update fields
+    user.username = username || user.username;
+    user.email = email || user.email;
+    user.city = city || user.city;
+    user.location = location || user.location;
+
+    const updatedUser = await user.save();
+    res.status(200).json(updatedUser);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+
+
+
+module.exports = { loginUser, registerUser,getUserProfile, updateUserProfile  };
