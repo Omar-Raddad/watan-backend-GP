@@ -8,7 +8,6 @@ const loginUser = async (req, res) => {
 
   try {
     const user = await User.findOne({ email });
-    console.log("user",user);
     if (!user) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
@@ -19,7 +18,7 @@ const loginUser = async (req, res) => {
     }
 
     // Generate JWT
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
     res.status(200).json({
       message: 'Login successful',
       token,

@@ -48,46 +48,88 @@ exports.createProduct = async (req, res) => {
 };
 
 
-  // Get all products with filters
 exports.getProducts = async (req, res) => {
   try {
-    const { category, user, search, minPrice, maxPrice, occasion } = req.query;
+    const { category, user, search, minPrice, maxPrice, occasion, userLocation } = req.query;
 
     const filter = {};
 
-    // Filter by category ID
-    if (category) filter.category = category;
-
-    // Filter by user ID
-    if (user) filter.user = user;
-
-    // Filter by price range
+    // Apply filters to all products
+    if (category) filter.category = mongoose.Types.ObjectId(category); // Convert to ObjectId
+    if (user) filter.user = mongoose.Types.ObjectId(user); // Convert to ObjectId
     if (minPrice || maxPrice) {
       filter.price = {};
       if (minPrice) filter.price.$gte = parseFloat(minPrice);
       if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
     }
-
-    // Filter by search term (name/description)
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
         { description: { $regex: search, $options: 'i' } },
       ];
     }
-
-    // Filter by occasion true/false
-    // e.g. GET /api/products?occasion=true
-    // or GET /api/products?occasion=false
     if (occasion !== undefined) {
-      // Convert the string "true"/"false" to a boolean
       filter.occasion = occasion === 'true';
     }
 
-    const products = await Product.find(filter)
-      .populate('category', 'name')   // Also populate category name
-      .populate('user', 'username email')
-      .sort({ createdAt: -1 });       // Sort newest first
+    // Parse userLocation if provided (e.g., { "city": "Ramallah" })
+    let parsedLocation = null;
+    if (userLocation) {
+      parsedLocation = JSON.parse(userLocation); // Expecting a JSON string input
+    }
+
+    // Build the aggregation pipeline
+    const pipeline = [
+      // Match filters
+      { $match: filter },
+
+      // Add a calculated sponsorship score
+      {
+        $addFields: {
+          sponsorshipScore: {
+            $cond: [
+              { $and: [
+                { $eq: ['$sponsorship.isSponsored', true] },
+                { $or: [
+                  { $eq: ['$sponsorship.nationwide', true] },
+                  { $in: [parsedLocation?.city, '$sponsorship.targetLocations.city'] }
+                ]}
+              ]},
+              { $add: ['$sponsorship.priority', '$sponsorship.amountPaid'] }, // Sponsorship score
+              0 // Default score for non-sponsored
+            ],
+          },
+        },
+      },
+
+      // Sort by sponsorship score and createdAt
+      { $sort: { sponsorshipScore: -1, createdAt: -1 } },
+
+      // Lookup to "populate" category
+      {
+        $lookup: {
+          from: 'categories', // The name of the "Category" collection
+          localField: 'category',
+          foreignField: '_id',
+          as: 'category',
+        },
+      },
+      { $unwind: { path: '$category', preserveNullAndEmptyArrays: true } }, // Unwind populated category
+
+      // Lookup to "populate" user
+      {
+        $lookup: {
+          from: 'users', // The name of the "User" collection
+          localField: 'user',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } }, // Unwind populated user
+    ];
+
+    // Execute the aggregation pipeline
+    const products = await Product.aggregate(pipeline);
 
     res.status(200).json(products);
   } catch (error) {
@@ -97,36 +139,7 @@ exports.getProducts = async (req, res) => {
 };
 
 
-// Get all products with filters
-exports.getProducts = async (req, res) => {
-  try {
-    const { category, user, search, minPrice, maxPrice } = req.query;
-    const filter = {};
 
-    if (category) filter.category = category;
-    if (user) filter.user = user;
-    if (minPrice || maxPrice) {
-      filter.price = {};
-      if (minPrice) filter.price.$gte = parseFloat(minPrice);
-      if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
-    }
-    if (search) {
-      filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
-      ];
-    }
-
-    const products = await Product.find(filter)
-      .populate('category', 'name')
-      .populate('user', 'username email')
-      .sort({ createdAt: -1 });
-
-    res.status(200).json(products);
-  } catch (error) {
-    res.status(500).json({ message: 'Error fetching products', error });
-  }
-};
 
 // Get a specific product by ID
 exports.getProductById = async (req, res) => {
@@ -195,6 +208,80 @@ exports.deleteProduct = async (req, res) => {
     res.status(200).json({ message: 'Product deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Error deleting product', error });
+  }
+};
+exports.getUserProducts = async (req, res) => {
+  try {
+    console.log("re",req);
+    const userId = req.user._id;
+
+    const products = await Product.find({ user: userId })
+      .populate('category', 'name')
+      .populate('user', 'username email')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json(products);
+  } catch (error) {
+    console.error('Error fetching user products:', error);
+    res.status(500).json({ message: 'Error fetching user products', error });
+  }
+};
+exports.getSponsoredProducts = async (req, res) => {
+  try {
+    const { city } = req.query;
+
+    const filter = { 'sponsorship.isSponsored': true };
+
+    if (city) {
+      filter.$or = [
+        { 'sponsorship.targetLocations.city': city },
+        { 'sponsorship.nationwide': true },
+      ];
+    }
+
+    const sponsoredProducts = await Product.find(filter)
+      .sort({ 'sponsorship.priority': -1 }) // Higher sponsorship amount = higher priority
+      .populate('category', 'name')
+      .populate('user', 'username email');
+
+    res.status(200).json(sponsoredProducts);
+  } catch (error) {
+    console.error('Error fetching sponsored products:', error);
+    res.status(500).json({ message: 'Error fetching sponsored products', error });
+  }
+};
+exports.addSponsorship = async (req, res) => {
+  try {
+    const { productId, amountPaid, targetLocations, nationwide, priority } = req.body;
+
+    // Validate priority level
+    if (priority && ![1, 2, 3, 4, 5].includes(priority)) {
+      return res.status(400).json({
+        message: 'Invalid priority level. Allowed values are 1, 2, 3, 4, or 5.',
+      });
+    }
+
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    product.sponsorship = {
+      isSponsored: true,
+      amountPaid: amountPaid || 0,
+      priority: priority || 1, // Default to priority level 1
+      targetLocations: targetLocations?.map((city) => ({ city })) || [],
+      nationwide: nationwide || false,
+    };
+
+    const updatedProduct = await product.save();
+    res.status(200).json({
+      message: 'Sponsorship added successfully',
+      product: updatedProduct,
+    });
+  } catch (error) {
+    console.error('Error adding sponsorship:', error);
+    res.status(500).json({ message: 'Error adding sponsorship', error });
   }
 };
 

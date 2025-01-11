@@ -11,26 +11,50 @@ const productSchema = new mongoose.Schema({
   },
   price: {
     type: Number,
-    default: null, // Null if it's an occasion instead of a regular product
+    default: null,
   },
   occasion: {
     type: Boolean,
-    default: false, // True if it's an occasion product
+    default: false,
   },
   images: [
     {
-      type: String, // URLs or paths of uploaded product images
+      type: String,
     },
   ],
   category: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Category', // References the Category schema
+    ref: 'Category',
     required: true,
   },
   user: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // References the User who created the product
+    ref: 'User',
     required: true,
+  },
+  sponsorship: {
+    isSponsored: {
+      type: Boolean,
+      default: false,
+    },
+    amountPaid: {
+      type: Number,
+      default: 0,
+    },
+    priority: {
+      type: Number,
+      enum: [1, 2, 3, 4, 5], // Allow priority levels from 1 to 5
+      default: 1,
+    },
+    targetLocations: [
+      {
+        city: String,
+      },
+    ],
+    nationwide: {
+      type: Boolean,
+      default: false,
+    },
   },
   createdAt: {
     type: Date,
