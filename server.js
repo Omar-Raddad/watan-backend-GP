@@ -9,6 +9,7 @@ const productRoutes = require('./src/routes/productRoutes');
 const categoryRoutes = require('./src/routes/categoryRoutes');
 const conversationRoutes = require('./src/routes/messagingRoute');
 
+const notificationRoutes = require('./src/routes/notificationRoutes');
 
 const morgan = require('morgan');
 
@@ -30,6 +31,7 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/messaging',conversationRoutes);
 app.use('/api/checkpoints', checkpointRoutes);
 app.use('/api/posts', postRouter); // Post routes
+app.use('/api/notifications', notificationRoutes);
 
 app.use(morgan('dev'));
 

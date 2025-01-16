@@ -27,11 +27,15 @@ const userSchema = new mongoose.Schema({
     type: {
       type: String, // Specifies GeoJSON type
       enum: ['Point'], // Limited to 'Point' for geospatial queries
-      required: true,
+      required: false,
+      default: 'Point', // Default type
+
     },
     coordinates: {
       type: [Number], // [longitude, latitude]
-      required: true,
+      required: false,
+      default: [0, 0], // Default coordinates (longitude, latitude)
+
     },
   },
   gender: {

@@ -3,19 +3,30 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 // User login
+// User login
 const loginUser = async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, fcmToken } = req.body; // Add fcmToken to the request body
 
   try {
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
-
+    console.log("user",user);
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
+    console.log("isMatch",isMatch);
+
+    // Update the user's FCM token
+    if (fcmToken) {
+      console.log("fcmToken",fcmToken);
+
+      user.fcmToken = fcmToken;
+      await user.save();
+    }
+    console.log("res",res);
 
     // Generate JWT
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
@@ -37,8 +48,9 @@ const loginUser = async (req, res) => {
 };
 
 // User registration
+// User registration
 const registerUser = async (req, res) => {
-  const { username, email, password, city, location, gender } = req.body;
+  const { username, email, password, city, location, gender, fcmToken } = req.body;
 
   try {
     const userExists = await User.findOne({ email });
@@ -46,7 +58,7 @@ const registerUser = async (req, res) => {
       return res.status(400).json({ message: 'User with this email already exists' });
     }
 
-    const newUser = new User({ username, email, password, city, location, gender });
+    const newUser = new User({ username, email, password, city, location, gender, fcmToken });
     await newUser.save();
 
     res.status(201).json({
@@ -64,6 +76,7 @@ const registerUser = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
 
 // Fetch user profile
 const getUserProfile = async (req, res) => {
